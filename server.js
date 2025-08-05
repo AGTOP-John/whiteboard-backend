@@ -1,46 +1,65 @@
-
 const express = require('express');
 const http = require('http');
+const cors = require('cors');
 const { Server } = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    // origin: [
-    //   "http://localhost:3000",
-    //   "https://frolicking-sawine-1e3ceb.netlify.app"
-    // ],
-    origin: "https://frolicking-sawine-1e3ceb.netlify.app", // ✅ 或指定您 Netlify 網址
-    // origin: "*",
-    methods: ["GET", "POST"]
-  }
+    origin: '*',
+  },
 });
 
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(cors());
+app.get('/', (req, res) => {
+  res.send('✅ Server is running');
+});
+
+// === WebSocket Core ===
+let broadcasterId = null;
 
 io.on('connection', (socket) => {
-  console.log('使用者已連線:', socket.id);
+  console.log('🔌 New client connected:', socket.id);
 
+  // 分配 WebRTC 角色
+  if (!broadcasterId) {
+    broadcasterId = socket.id;
+    socket.emit('role', 'broadcaster');
+    console.log(`🎥 ${socket.id} assigned as broadcaster`);
+  } else {
+    socket.emit('role', 'viewer');
+    socket.to(broadcasterId).emit('viewer-joined', socket.id);
+    console.log(`👀 ${socket.id} joined as viewer`);
+  }
+
+  // --- WebRTC signaling ---
+  socket.on('signal', ({ target, data }) => {
+    io.to(target).emit('signal', {
+      source: socket.id,
+      data,
+    });
+  });
+
+  // --- 畫板同步繪圖 ---
+  socket.on('drawing', (data) => {
+    socket.broadcast.emit('drawing', data);
+  });
+
+  // --- 聊天訊息 ---
   socket.on('chat message', (msg) => {
     io.emit('chat message', msg);
   });
 
-  socket.on('draw', (data) => {
-    socket.broadcast.emit('draw', data);
-  });
-
-  socket.on('clear', () => {
-    io.emit('clear');
-  });
-
   socket.on('disconnect', () => {
-    console.log('使用者離線:', socket.id);
+    console.log('❌ Client disconnected:', socket.id);
+    if (socket.id === broadcasterId) {
+      broadcasterId = null;
+      console.log('🎥 Broadcaster left, broadcasterId reset');
+    }
   });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`伺服器啟動於 http://localhost:${PORT}`);
+server.listen(3001, () => {
+  console.log('🚀 Server listening on port 3001');
 });

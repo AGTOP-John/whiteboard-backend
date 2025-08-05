@@ -1,178 +1,153 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
 import io from 'socket.io-client';
+import SimplePeer from 'simple-peer';
 
-const socket = io("https://whiteboard-backend-1n0p.onrender.com", {
-  transports: ["websocket"]
-});
+const socket = io("https://whiteboard-backend-1n0p.onrender.com");
 
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const chatRef = useRef(null);
-  const [messages, setMessages] = useState([]);
-  const [message, setMessage] = useState('');
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [isBroadcaster, setIsBroadcaster] = useState(false);
+  const [peers, setPeers] = useState({});
   const [username, setUsername] = useState('');
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [color, setColor] = useState('#' + Math.floor(Math.random()*16777215).toString(16));
+  const [role, setRole] = useState('');
 
   useEffect(() => {
-    if (!loggedIn) return;
-
-    navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then((stream) => {
-      if (videoRef.current) {
+    socket.on('role', async (r) => {
+      setRole(r);
+      if (r === 'broadcaster') {
+        setIsBroadcaster(true);
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         videoRef.current.srcObject = stream;
+        socket.on('viewer-joined', (viewerId) => {
+          const peer = new SimplePeer({ initiator: true, trickle: false, stream });
+          peer.on('signal', data => socket.emit('signal', { target: viewerId, data }));
+          setPeers(prev => ({ ...prev, [viewerId]: peer }));
+        });
+      } else {
+        setIsBroadcaster(false);
       }
     });
 
-    socket.on('chat message', (msg) => {
-      setMessages(prev => [...prev, msg]);
+    socket.on('signal', ({ source, data }) => {
+      if (!peers[source]) {
+        const peer = new SimplePeer({ initiator: false, trickle: false });
+        peer.on('signal', d => socket.emit('signal', { target: source, data: d }));
+        peer.on('stream', stream => {
+          videoRef.current.srcObject = stream;
+        });
+        peer.signal(data);
+        setPeers(prev => ({ ...prev, [source]: peer }));
+      } else {
+        peers[source].signal(data);
+      }
     });
 
-    socket.on('draw', drawRemote);
-    socket.on('clear', clearCanvas);
-  }, [loggedIn]);
+    return () => {
+      socket.disconnect();
+      Object.values(peers).forEach(p => p.destroy());
+    };
+  }, []);
 
   useEffect(() => {
-    if (!canvasRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
 
     const resizeCanvas = () => {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
+      // 備份畫布內容
+      const temp = document.createElement('canvas');
+      temp.width = canvas.width;
+      temp.height = canvas.height;
+      temp.getContext('2d').drawImage(canvas, 0, 0);
+
       canvas.width = video.clientWidth;
       canvas.height = video.clientHeight;
+
+      // 重繪畫布
+      canvas.getContext('2d').drawImage(temp, 0, 0);
     };
 
-    resizeCanvas();
+    video.addEventListener('loadedmetadata', resizeCanvas);
     window.addEventListener('resize', resizeCanvas);
-    return () => window.removeEventListener('resize', resizeCanvas);
-  }, [loggedIn]);
+    return () => {
+      video.removeEventListener('loadedmetadata', resizeCanvas);
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, []);
 
-  const getCoords = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
-    return { x, y };
-  };
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
 
-  const handleMouseDown = (e) => {
-    e.preventDefault();
-    setIsDrawing(true);
-    const { x, y } = getCoords(e);
-    canvasRef.current.prevX = x;
-    canvasRef.current.prevY = y;
-  };
+    const start = (e) => {
+      drawing = true;
+      draw(e);
+    };
+    const end = () => { drawing = false; ctx.beginPath(); };
+    const draw = (e) => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'red';
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      socket.emit('drawing', { x, y });
+    };
 
-  const handleMouseMove = (e) => {
-    if (!isDrawing) return;
-    e.preventDefault();
-    const { x, y } = getCoords(e);
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(canvasRef.current.prevX, canvasRef.current.prevY);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    socket.emit('draw', {
-      from: { x: canvasRef.current.prevX, y: canvasRef.current.prevY },
-      to: { x, y },
-      color
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('touchstart', (e) => start(e.touches[0]));
+    canvas.addEventListener('touchend', end);
+    canvas.addEventListener('touchmove', (e) => draw(e.touches[0]));
+
+    socket.on('drawing', ({ x, y }) => {
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'red';
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
     });
-    canvasRef.current.prevX = x;
-    canvasRef.current.prevY = y;
-  };
 
-  const handleMouseUp = (e) => {
-    e.preventDefault();
-    setIsDrawing(false);
-  };
-
-  const drawRemote = (data) => {
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = data.color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(data.from.x, data.from.y);
-    ctx.lineTo(data.to.x, data.to.y);
-    ctx.stroke();
-  };
+    return () => {
+      canvas.removeEventListener('mousedown', start);
+      canvas.removeEventListener('mouseup', end);
+      canvas.removeEventListener('mousemove', draw);
+      canvas.removeEventListener('touchstart', (e) => start(e.touches[0]));
+      canvas.removeEventListener('touchend', end);
+      canvas.removeEventListener('touchmove', (e) => draw(e.touches[0]));
+    };
+  }, []);
 
   const clearCanvas = () => {
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  const handleChat = (e) => {
-    e.preventDefault();
-    if (message.trim()) {
-      socket.emit('chat message', `[${username}] ${message}`);
-      setMessage('');
-    }
-  };
-
-  return !loggedIn ? (
-    <div style={{ padding: '20px' }}>
-      <h2>請輸入暱稱：</h2>
-      <input value={username} onChange={(e) => setUsername(e.target.value)} />
-      <button onClick={() => setLoggedIn(true)}>進入聊天室</button>
-    </div>
-  ) : (
-    <div style={{ padding: '10px' }}>
-      <div style={{ position: 'relative', width: '500px', height: '500px', margin: '0 auto' }}>
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            zIndex: 1
-          }}
-        />
-        <canvas
-          ref={canvasRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onTouchStart={handleMouseDown}
-          onTouchMove={handleMouseMove}
-          onTouchEnd={handleMouseUp}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            zIndex: 2,
-            touchAction: 'none'
-          }}
-        />
-        <button onClick={() => socket.emit('clear')} style={{ position: 'absolute', top: 10, left: 10, zIndex: 3 }}>清空畫板</button>
+  return (
+    <div style={{ position: 'relative', textAlign: 'center' }}>
+      <div style={{ padding: '0.5em', background: '#eee' }}>
+        <span>👤 你的暱稱：</span>
+        <input value={username} onChange={(e) => setUsername(e.target.value)} />
+        <span style={{ marginLeft: '1em' }}>🧑‍💻 角色：{role}</span>
+        <button style={{ marginLeft: '1em' }} onClick={clearCanvas}>🧹 清除畫布</button>
       </div>
-
-      <div style={{ marginTop: '20px' }}>
-        <form onSubmit={handleChat} style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-          <input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="輸入訊息"
-            style={{ flex: 1 }}
-          />
-          <button type="submit">送出</button>
-        </form>
-        <div ref={chatRef} style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #ccc', padding: '5px' }}>
-          {messages.map((msg, idx) => <div key={idx}>{msg}</div>)}
-        </div>
+      <div style={{ position: 'relative' }}>
+        <video ref={videoRef} autoPlay playsInline muted={isBroadcaster} style={{ width: '100%' }} />
+        <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0 }} />
       </div>
     </div>
   );
 }
 
-const container = document.getElementById('root');
-const root = createRoot(container);
-root.render(<App />);
+export default App;
