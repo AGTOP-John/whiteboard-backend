@@ -3,7 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import io from 'socket.io-client';
 
-const socket = io();
+// const socket = io();
+const socket = io("https://whiteboard-backend-1n0p.onrender.com");
+
 
 function App() {
   const videoRef = useRef(null);

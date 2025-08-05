@@ -6,7 +6,12 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: "https://frolicking-sawine-1e3ceb.netlify.app/", // ✅ 或指定您 Netlify 網址
+    methods: ["GET", "POST"]
+  }
+});
 
 app.use(express.static(path.join(__dirname, 'dist')));
 
