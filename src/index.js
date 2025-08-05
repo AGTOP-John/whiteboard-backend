@@ -1,9 +1,7 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import io from 'socket.io-client';
 
-// const socket = io();
 const socket = io("https://whiteboard-backend-1n0p.onrender.com", {
   transports: ["websocket"]
 });
@@ -36,33 +34,25 @@ function App() {
     socket.on('clear', clearCanvas);
   }, [loggedIn]);
 
-  const drawRemote = (data) => {
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = data.color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(data.from.x, data.from.y);
-    ctx.lineTo(data.to.x, data.to.y);
-    ctx.stroke();
-  };
-
-  const clearCanvas = () => {
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+  const getCoords = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    return { x, y };
   };
 
   const handleMouseDown = (e) => {
+    e.preventDefault();
     setIsDrawing(true);
-    const rect = canvasRef.current.getBoundingClientRect();
-    canvasRef.current.prevX = e.clientX - rect.left;
-    canvasRef.current.prevY = e.clientY - rect.top;
+    const { x, y } = getCoords(e);
+    canvasRef.current.prevX = x;
+    canvasRef.current.prevY = y;
   };
 
   const handleMouseMove = (e) => {
     if (!isDrawing) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    e.preventDefault();
+    const { x, y } = getCoords(e);
     const ctx = canvasRef.current.getContext('2d');
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
@@ -79,8 +69,24 @@ function App() {
     canvasRef.current.prevY = y;
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e) => {
+    e.preventDefault();
     setIsDrawing(false);
+  };
+
+  const drawRemote = (data) => {
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.strokeStyle = data.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(data.from.x, data.from.y);
+    ctx.lineTo(data.to.x, data.to.y);
+    ctx.stroke();
+  };
+
+  const clearCanvas = () => {
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
   };
 
   const handleChat = (e) => {
@@ -100,7 +106,7 @@ function App() {
   ) : (
     <div style={{ padding: '20px' }}>
       <div style={{ position: 'relative', width: '500px', height: '500px', margin: '0 auto' }}>
-        <video ref={videoRef} autoPlay muted style={{ width: '500px', height: '500px', objectFit: 'cover', position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+        <video ref={videoRef} autoPlay muted playsInline style={{ width: '500px', height: '500px', objectFit: 'cover', position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
         <canvas
           ref={canvasRef}
           width={500}
@@ -108,6 +114,9 @@ function App() {
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onTouchStart={handleMouseDown}
+          onTouchMove={handleMouseMove}
+          onTouchEnd={handleMouseUp}
           style={{ border: '1px solid black', position: 'absolute', top: 0, left: 0, zIndex: 2 }}
         />
         <button onClick={() => socket.emit('clear')} style={{ position: 'absolute', top: 10, left: 510, zIndex: 3 }}>清空畫板</button>
