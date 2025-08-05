@@ -1,4 +1,3 @@
-// ✅ 完整後端 WebRTC signaling + 聊天 + 畫板同步 + 角色管理
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -8,48 +7,25 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    // origin: [
+    //   "http://localhost:3000",
+    //   "https://frolicking-sawine-1e3ceb.netlify.app"
+    // ],
+    origin: "https://frolicking-sawine-1e3ceb.netlify.app", // ✅ 或指定您 Netlify 網址
+    // origin: "*",
     methods: ["GET", "POST"]
   }
 });
 
 app.use(express.static(path.join(__dirname, 'dist')));
 
-let broadcasterId = null;
-
 io.on('connection', (socket) => {
   console.log('使用者已連線:', socket.id);
 
-  // 分配角色
-  if (!broadcasterId) {
-    broadcasterId = socket.id;
-    socket.emit('role', 'broadcaster');
-  } else {
-    socket.emit('role', 'viewer');
-    if (broadcasterId) {
-      io.to(broadcasterId).emit('new viewer', socket.id);
-    }
-  }
-
-  // WebRTC signaling
-  socket.on('offer', ({ targetId, sdp }) => {
-    io.to(targetId).emit('offer', { sdp, senderId: socket.id });
-  });
-
-  socket.on('answer', ({ targetId, sdp }) => {
-    io.to(targetId).emit('answer', { sdp, senderId: socket.id });
-  });
-
-  socket.on('ice-candidate', ({ targetId, candidate }) => {
-    io.to(targetId).emit('ice-candidate', { candidate, senderId: socket.id });
-  });
-
-  // 聊天功能
   socket.on('chat message', (msg) => {
     io.emit('chat message', msg);
   });
 
-  // 畫板功能
   socket.on('draw', (data) => {
     socket.broadcast.emit('draw', data);
   });
@@ -58,11 +34,7 @@ io.on('connection', (socket) => {
     io.emit('clear');
   });
 
-  // 離線處理
   socket.on('disconnect', () => {
-    if (socket.id === broadcasterId) {
-      broadcasterId = null;
-    }
     console.log('使用者離線:', socket.id);
   });
 });
