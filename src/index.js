@@ -34,6 +34,21 @@ function App() {
     socket.on('clear', clearCanvas);
   }, [loggedIn]);
 
+  useEffect(() => {
+    if (!canvasRef.current || !videoRef.current) return;
+
+    const resizeCanvas = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.clientWidth;
+      canvas.height = video.clientHeight;
+    };
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [loggedIn]);
+
   const getCoords = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
@@ -98,28 +113,46 @@ function App() {
   };
 
   return !loggedIn ? (
-    <div>
+    <div style={{ padding: '20px' }}>
       <h2>請輸入暱稱：</h2>
       <input value={username} onChange={(e) => setUsername(e.target.value)} />
       <button onClick={() => setLoggedIn(true)}>進入聊天室</button>
     </div>
   ) : (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '10px' }}>
       <div style={{ position: 'relative', width: '500px', height: '500px', margin: '0 auto' }}>
-        <video ref={videoRef} autoPlay muted playsInline style={{ width: '500px', height: '500px', objectFit: 'cover', position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 1
+          }}
+        />
         <canvas
           ref={canvasRef}
-          width={500}
-          height={500}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onTouchStart={handleMouseDown}
           onTouchMove={handleMouseMove}
           onTouchEnd={handleMouseUp}
-          style={{ border: '1px solid black', position: 'absolute', top: 0, left: 0, zIndex: 2 }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 2,
+            touchAction: 'none'
+          }}
         />
-        <button onClick={() => socket.emit('clear')} style={{ position: 'absolute', top: 10, left: 510, zIndex: 3 }}>清空畫板</button>
+        <button onClick={() => socket.emit('clear')} style={{ position: 'absolute', top: 10, left: 10, zIndex: 3 }}>清空畫板</button>
       </div>
 
       <div style={{ marginTop: '20px' }}>
