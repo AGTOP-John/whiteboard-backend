@@ -11,8 +11,8 @@ const io = new Server(server, {
     //   "http://localhost:3000",
     //   "https://frolicking-sawine-1e3ceb.netlify.app"
     // ],
-    origin: "https://frolicking-sawine-1e3ceb.netlify.app", // ✅ 或指定您 Netlify 網址
-    // origin: "*",
+    // origin: "https://frolicking-sawine-1e3ceb.netlify.app", // ✅ 或指定您 Netlify 網址
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
