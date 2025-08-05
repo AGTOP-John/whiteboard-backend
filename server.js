@@ -8,7 +8,12 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://frolicking-sawine-1e3ceb.netlify.app/", // ✅ 或指定您 Netlify 網址
+    // origin: [
+    //   "http://localhost:3000",
+    //   "https://frolicking-sawine-1e3ceb.netlify.app"
+    // ],
+    origin: "https://frolicking-sawine-1e3ceb.netlify.app", // ✅ 或指定您 Netlify 網址
+    // origin: "*",
     methods: ["GET", "POST"]
   }
 });
