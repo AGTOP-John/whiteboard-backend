@@ -27,6 +27,9 @@ function App() {
       } else {
         setIsBroadcaster(false);
       }
+
+      // 將 username + role 同步給 server
+      socket.emit('user-joined', { username, role: r });
     });
 
     socket.on('signal', ({ source, data }) => {
@@ -47,7 +50,7 @@ function App() {
       socket.disconnect();
       Object.values(peers).forEach(p => p.destroy());
     };
-  }, []);
+  }, [username]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -55,7 +58,6 @@ function App() {
     if (!video || !canvas) return;
 
     const resizeCanvas = () => {
-      // 備份畫布內容
       const temp = document.createElement('canvas');
       temp.width = canvas.width;
       temp.height = canvas.height;
@@ -63,8 +65,6 @@ function App() {
 
       canvas.width = video.clientWidth;
       canvas.height = video.clientHeight;
-
-      // 重繪畫布
       canvas.getContext('2d').drawImage(temp, 0, 0);
     };
 

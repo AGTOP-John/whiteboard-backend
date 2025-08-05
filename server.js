@@ -16,13 +16,13 @@ app.get('/', (req, res) => {
   res.send('✅ Server is running');
 });
 
-// === WebSocket Core ===
 let broadcasterId = null;
+let users = {}; // key: socket.id, value: { username, role }
 
 io.on('connection', (socket) => {
   console.log('🔌 New client connected:', socket.id);
 
-  // 分配 WebRTC 角色
+  // 分配角色
   if (!broadcasterId) {
     broadcasterId = socket.id;
     socket.emit('role', 'broadcaster');
@@ -33,33 +33,36 @@ io.on('connection', (socket) => {
     console.log(`👀 ${socket.id} joined as viewer`);
   }
 
-  // --- WebRTC signaling ---
-  socket.on('signal', ({ target, data }) => {
-    io.to(target).emit('signal', {
-      source: socket.id,
-      data,
-    });
+  // 接收使用者資訊
+  socket.on('user-joined', ({ username, role }) => {
+    users[socket.id] = { username, role };
+    console.log(`✅ User joined: ${username} (${role})`);
+    io.emit('user-list', Object.values(users));
   });
 
-  // --- 畫板同步繪圖 ---
+  // WebRTC signaling
+  socket.on('signal', ({ target, data }) => {
+    io.to(target).emit('signal', { source: socket.id, data });
+  });
+
+  // 畫板同步
   socket.on('drawing', (data) => {
     socket.broadcast.emit('drawing', data);
   });
 
-  // --- 聊天訊息 ---
-  socket.on('chat message', (msg) => {
-    io.emit('chat message', msg);
-  });
-
+  // 離線處理
   socket.on('disconnect', () => {
     console.log('❌ Client disconnected:', socket.id);
     if (socket.id === broadcasterId) {
       broadcasterId = null;
-      console.log('🎥 Broadcaster left, broadcasterId reset');
+      console.log('⚠️ Broadcaster left, clearing broadcasterId');
     }
+    delete users[socket.id];
+    io.emit('user-list', Object.values(users));
   });
 });
 
-server.listen(3001, () => {
-  console.log('🚀 Server listening on port 3001');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
